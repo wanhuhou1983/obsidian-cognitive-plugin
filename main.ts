@@ -12,6 +12,7 @@ interface CognitivePluginSettings {
   removeToc: boolean;      // 删除目录
   removeComments: boolean; // 删除注释
   removeIndex: boolean;
+  splitByChapter: boolean; // 按章节分段处理
   maxTokens: number;
   temperature: number;
 }
@@ -116,6 +117,7 @@ const DEFAULT_SETTINGS: CognitivePluginSettings = {
   removeToc: true,
   removeComments: true,
   removeIndex: true,
+  splitByChapter: true,  // 默认开启按章节分段
   maxTokens: 32000,
   temperature: 0.3,
 };
@@ -144,6 +146,65 @@ function buildCleanPrompt(basePrompt: string, removeToc: boolean, removeComments
 function convertLineRefsToWikiLinks(content: string, originalFileName: string): string {
   // 把 (原文#L行号) 转换为 [[原文件名#L行号|原文]]
   return content.replace(/\(原文#L(\d+)\)/g, `[[${originalFileName}#$1|原文]]`);
+}
+
+// ==================== 按章节拆分 ====================
+interface ChapterChunk {
+  title: string;      // 章节标题
+  content: string;    // 章节内容
+  startLine: number;  // 起始行号
+}
+
+function splitByH1(content: string): ChapterChunk[] {
+  const lines = content.split('\n');
+  const chunks: ChapterChunk[] = [];
+  let currentChapter: ChapterChunk | null = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNum = i + 1;
+
+    // 检测 H1 标题 (以 # 开头，后面是空格)
+    const h1Match = line.match(/^#\s+(.+)$/);
+
+    if (h1Match) {
+      // 保存上一章
+      if (currentChapter) {
+        currentChapter.content = currentChapter.content.trim();
+        if (currentChapter.content) {
+          chunks.push(currentChapter);
+        }
+      }
+
+      // 开始新章节
+      currentChapter = {
+        title: h1Match[1].trim(),
+        content: line + '\n',
+        startLine: lineNum
+      };
+    } else if (currentChapter) {
+      currentChapter.content += line + '\n';
+    } else {
+      // 没有章节标题的内容（可能是前言之类的），作为第一章
+      if (!currentChapter) {
+        currentChapter = {
+          title: '前言/序章',
+          content: line + '\n',
+          startLine: lineNum
+        };
+      }
+    }
+  }
+
+  // 保存最后一章
+  if (currentChapter) {
+    currentChapter.content = currentChapter.content.trim();
+    if (currentChapter.content) {
+      chunks.push(currentChapter);
+    }
+  }
+
+  return chunks;
 }
 
 // ==================== DeepSeek API 调用 ====================
@@ -507,6 +568,19 @@ class CognitiveSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
+    // 分段处理选项
+    containerEl.createEl('h3', { text: '处理模式' });
+
+    new Setting(containerEl)
+      .setName('按章节分段处理')
+      .setDesc('按 H1 标题拆分内容，逐章处理后合并。适合大部头书籍，避免超限截断')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.splitByChapter)
+        .onChange(async (value) => {
+          this.plugin.settings.splitByChapter = value;
+          await this.plugin.saveSettings();
+        }));
+
     // API 参数
     containerEl.createEl('h3', { text: 'API 参数' });
 
@@ -666,65 +740,193 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
       return;
     }
 
+    const useChunking = this.settings.splitByChapter;
+    const chunks = useChunking ? splitByH1(content) : null;
+    const totalChunks = chunks ? chunks.length : 1;
+
     try {
       if (mode === 'clean' || mode === 'full') {
-        new Notice('🔄 开始精度修复...');
-        const dynamicPrompt = buildCleanPrompt(
-          this.settings.promptClean,
-          this.settings.removeToc,
-          this.settings.removeComments,
-          this.settings.removeIndex
-        );
-        const cleaned = await callDeepSeek(
-          this.settings.apiBaseUrl,
-          this.settings.apiKey,
-          this.settings.modelClean,
-          dynamicPrompt,
-          content,
-          undefined,
-          this.settings.maxTokens,
-          this.settings.temperature
-        );
+        // 精度修复阶段
+        let cleanedContent: string;
 
-        await this.saveOutput(cleaned, file, '_clean');
+        if (useChunking && chunks && chunks.length > 1) {
+          // 分段处理
+          new Notice(`🔄 开始精度修复（${chunks.length}个章节）...`);
+          const cleanedChunks: string[] = [];
+
+          for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            new Notice(`  处理章节 ${i+1}/${chunks.length}: ${chunk.title}`);
+
+            const dynamicPrompt = buildCleanPrompt(
+              this.settings.promptClean,
+              this.settings.removeToc,
+              this.settings.removeComments,
+              this.settings.removeIndex
+            );
+
+            const cleaned = await callDeepSeek(
+              this.settings.apiBaseUrl,
+              this.settings.apiKey,
+              this.settings.modelClean,
+              dynamicPrompt,
+              chunk.content,
+              undefined,
+              this.settings.maxTokens,
+              this.settings.temperature
+            );
+
+            cleanedChunks.push(`## ${chunk.title}\n\n${cleaned}`);
+          }
+
+          cleanedContent = cleanedChunks.join('\n\n---\n\n');
+        } else {
+          // 整体处理
+          new Notice('🔄 开始精度修复...');
+          const dynamicPrompt = buildCleanPrompt(
+            this.settings.promptClean,
+            this.settings.removeToc,
+            this.settings.removeComments,
+            this.settings.removeIndex
+          );
+
+          cleanedContent = await callDeepSeek(
+            this.settings.apiBaseUrl,
+            this.settings.apiKey,
+            this.settings.modelClean,
+            dynamicPrompt,
+            content,
+            undefined,
+            this.settings.maxTokens,
+            this.settings.temperature
+          );
+        }
+
+        await this.saveOutput(cleanedContent, file, '_clean');
         new Notice('✅ 精度修复完成');
 
+        // 降噪阶段
         if (mode === 'full') {
+          if (useChunking && chunks && chunks.length > 1) {
+            // 对每个已精读的章节分别降噪
+            new Notice(`🧠 开始认知降噪（${chunks.length}个章节）...`);
+            const denoisedChunks: string[] = [];
+
+            for (let i = 0; i < chunks.length; i++) {
+              const chunk = chunks[i];
+              new Notice(`  降噪章节 ${i+1}/${chunks.length}: ${chunk.title}`);
+
+              // 重新拆分精读后的内容（因为 AI 可能改变了格式）
+              const cleanedChunk = await this.extractChapterFromResult(cleanedContent, chunk.title);
+
+              const denoised = await callDeepSeek(
+                this.settings.apiBaseUrl,
+                this.settings.apiKey,
+                this.settings.modelDenoise,
+                this.settings.promptDenoise,
+                cleanedChunk,
+                undefined,
+                this.settings.maxTokens,
+                this.settings.temperature
+              );
+
+              denoisedChunks.push(`## ${chunk.title}\n\n${denoised}`);
+            }
+
+            const denoisedContent = denoisedChunks.join('\n\n---\n\n');
+            await this.saveOutput(denoisedContent, file, '_analysis');
+          } else {
+            new Notice('🧠 开始认知降噪...');
+            const denoised = await callDeepSeek(
+              this.settings.apiBaseUrl,
+              this.settings.apiKey,
+              this.settings.modelDenoise,
+              this.settings.promptDenoise,
+              cleanedContent,
+              undefined,
+              this.settings.maxTokens,
+              this.settings.temperature
+            );
+
+            await this.saveOutput(denoised, file, '_analysis');
+          }
+          new Notice('✅ 认知降噪完成');
+        }
+      } else if (mode === 'denoise') {
+        // 仅降噪模式
+        if (useChunking && chunks && chunks.length > 1) {
+          new Notice(`🧠 开始认知降噪（${chunks.length}个章节）...`);
+          const denoisedChunks: string[] = [];
+
+          for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            new Notice(`  处理章节 ${i+1}/${chunks.length}: ${chunk.title}`);
+
+            const denoised = await callDeepSeek(
+              this.settings.apiBaseUrl,
+              this.settings.apiKey,
+              this.settings.modelDenoise,
+              this.settings.promptDenoise,
+              chunk.content,
+              undefined,
+              this.settings.maxTokens,
+              this.settings.temperature
+            );
+
+            denoisedChunks.push(`## ${chunk.title}\n\n${denoised}`);
+          }
+
+          const denoisedContent = denoisedChunks.join('\n\n---\n\n');
+          await this.saveOutput(denoisedContent, file, '_analysis');
+        } else {
           new Notice('🧠 开始认知降噪...');
           const denoised = await callDeepSeek(
             this.settings.apiBaseUrl,
             this.settings.apiKey,
             this.settings.modelDenoise,
             this.settings.promptDenoise,
-            cleaned,
+            content,
             undefined,
             this.settings.maxTokens,
             this.settings.temperature
           );
 
           await this.saveOutput(denoised, file, '_analysis');
-          new Notice('✅ 认知降噪完成');
         }
-      } else if (mode === 'denoise') {
-        new Notice('🧠 开始认知降噪...');
-        const denoised = await callDeepSeek(
-          this.settings.apiBaseUrl,
-          this.settings.apiKey,
-          this.settings.modelDenoise,
-          this.settings.promptDenoise,
-          content,
-          undefined,
-          this.settings.maxTokens,
-          this.settings.temperature
-        );
-
-        await this.saveOutput(denoised, file, '_analysis');
         new Notice('✅ 认知降噪完成');
       }
     } catch (error) {
       new Notice(`❌ 处理失败: ${error.message}`);
       console.error(error);
     }
+  }
+
+  // 从合并结果中提取指定章节的内容
+  async extractChapterFromResult(fullContent: string, chapterTitle: string): Promise<string> {
+    // 简单实现：查找章节标题到下一个章节标题之间的内容
+    // 实际使用时，AI 输出的章节标题应该与输入一致
+    const lines = fullContent.split('\n');
+    let inTargetChapter = false;
+    const chapterLines: string[] = [];
+
+    for (const line of lines) {
+      // 检测章节标题（## 标题）
+      const match = line.match(/^##\s+(.+)$/);
+      if (match) {
+        if (inTargetChapter) {
+          // 遇到下一个章节，停止
+          break;
+        }
+        if (match[1].trim() === chapterTitle) {
+          inTargetChapter = true;
+          chapterLines.push(line);
+        }
+      } else if (inTargetChapter) {
+        chapterLines.push(line);
+      }
+    }
+
+    return chapterLines.join('\n').trim() || fullContent;
   }
 
   async saveOutput(content: string, originalFile: TFile | null, suffix: string): Promise<void> {
