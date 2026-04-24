@@ -140,6 +140,12 @@ function buildCleanPrompt(basePrompt: string, removeToc: boolean, removeComments
   return basePrompt;
 }
 
+// ==================== 行号链接转换 ====================
+function convertLineRefsToWikiLinks(content: string, originalFileName: string): string {
+  // 把 (原文#L行号) 转换为 [[原文件名#L行号|原文]]
+  return content.replace(/\(原文#L(\d+)\)/g, `[[${originalFileName}#$1|原文]]`);
+}
+
 // ==================== DeepSeek API 调用 ====================
 async function callDeepSeek(
   apiBaseUrl: string,
@@ -354,6 +360,9 @@ class ProcessModal extends Modal {
     const baseName = originalFile.basename;
     const dir = originalFile.parent?.path || '';
 
+    // 转换行号引用为 wiki 链接
+    const processedContent = convertLineRefsToWikiLinks(content, originalFile.name);
+
     if (settings.outputMode === 'replace') {
       // 替换前确认并备份
       const confirmed = confirm('⚠️ 确定要替换原文吗？此操作不可恢复，建议先手动备份。');
@@ -364,11 +373,11 @@ class ProcessModal extends Modal {
       // 先创建备份
       const backupPath = `${dir}/${baseName}_backup_${Date.now()}.${ext}`;
       await this.app.vault.create(backupPath, await this.app.vault.read(originalFile));
-      await this.app.vault.modify(originalFile, content);
+      await this.app.vault.modify(originalFile, processedContent);
       new Notice(`✅ 已替换并备份到 ${baseName}_backup_*.md`);
     } else if (settings.outputMode === 'newFile') {
       const newPath = `${dir}/${baseName}${suffix}.${ext}`;
-      await this.app.vault.create(newPath, content);
+      await this.app.vault.create(newPath, processedContent);
       const newFile = this.app.vault.getAbstractFileByPath(newPath);
       if (newFile instanceof TFile) {
         await this.app.workspace.getLeaf().openFile(newFile);
@@ -376,7 +385,7 @@ class ProcessModal extends Modal {
     } else {
       // sidebar模式 - 在侧边栏显示
       const panel = this.app.workspace.getLeaf('right');
-      const newFile = await this.app.vault.create(`${baseName}${suffix}.${ext}`, content);
+      const newFile = await this.app.vault.create(`${baseName}${suffix}.${ext}`, processedContent);
       if (newFile instanceof TFile) {
         await panel.openFile(newFile);
       }
@@ -734,6 +743,9 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
     const baseName = originalFile.basename;
     const dir = originalFile.parent?.path || '';
 
+    // 转换行号引用为 wiki 链接
+    const processedContent = convertLineRefsToWikiLinks(content, originalFile.name);
+
     if (this.settings.outputMode === 'replace') {
       // 替换前确认并备份
       const confirmed = confirm('⚠️ 确定要替换原文吗？此操作不可恢复，建议先手动备份。');
@@ -744,18 +756,18 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
       // 先创建备份
       const backupPath = `${dir}/${baseName}_backup_${Date.now()}.${ext}`;
       await this.app.vault.create(backupPath, await this.app.vault.read(originalFile));
-      await this.app.vault.modify(originalFile, content);
+      await this.app.vault.modify(originalFile, processedContent);
       new Notice(`✅ 已替换并备份到 ${baseName}_backup_*.md`);
     } else if (this.settings.outputMode === 'newFile') {
       const newPath = `${dir}/${baseName}${suffix}.${ext}`;
-      await this.app.vault.create(newPath, content);
+      await this.app.vault.create(newPath, processedContent);
       const newFile = this.app.vault.getAbstractFileByPath(newPath);
       if (newFile instanceof TFile) {
         await this.app.workspace.getLeaf().openFile(newFile);
       }
     } else {
       const panel = this.app.workspace.getLeaf('right');
-      const newFile = await this.app.vault.create(`${baseName}${suffix}.${ext}`, content);
+      const newFile = await this.app.vault.create(`${baseName}${suffix}.${ext}`, processedContent);
       if (newFile instanceof TFile) {
         await panel.openFile(newFile);
       }
