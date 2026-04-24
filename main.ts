@@ -117,7 +117,7 @@ const DEFAULT_SETTINGS: CognitivePluginSettings = {
   removeToc: true,
   removeComments: true,
   removeIndex: true,
-  splitByChapter: true,  // 默认开启按章节分段
+  splitByChapter: false,  // 默认关闭，按需开启
   maxTokens: 32000,
   temperature: 0.3,
 };
@@ -290,6 +290,56 @@ async function callDeepSeek(
   }
 }
 
+// ==================== 确认对话框 Modal ====================
+class ConfirmModal extends Modal {
+  private message: string;
+  private onConfirm: () => void;
+  private onCancel: () => void;
+
+  constructor(
+    app: App,
+    message: string,
+    onConfirm: () => void,
+    onCancel: () => void = () => {}
+  ) {
+    super(app);
+    this.message = message;
+    this.onConfirm = onConfirm;
+    this.onCancel = onCancel;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl('div', {
+      cls: 'confirm-modal-content',
+      text: this.message
+    });
+
+    const btnContainer = contentEl.createDiv('confirm-modal-buttons');
+    
+    btnContainer.createEl('button', {
+      text: '取消',
+      cls: 'mod-warning'
+    }).addEventListener('click', () => {
+      this.onCancel();
+      this.close();
+    });
+
+    btnContainer.createEl('button', {
+      text: '确认',
+      cls: 'mod-success'
+    }).addEventListener('click', () => {
+      this.onConfirm();
+      this.close();
+    });
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
 // ==================== 处理模式选择 Modal ====================
 class ProcessModal extends Modal {
   private plugin: CognitiveNoiseReducerPlugin;
@@ -437,16 +487,25 @@ class ProcessModal extends Modal {
     processedContent = filterReasonerOutput(processedContent);
 
     if (settings.outputMode === 'replace') {
-      // 替换前确认并备份
-      const confirmed = confirm('⚠️ 确定要替换原文吗？此操作不可恢复，建议先手动备份。');
-      if (!confirmed) {
-        new Notice('已取消替换');
-        return;
-      }
-      // 先创建备份
-      const backupPath = `${dir}/${baseName}_backup_${Date.now()}.${ext}`;
-      await this.app.vault.create(backupPath, await this.app.vault.read(originalFile));
-      await this.app.vault.modify(originalFile, processedContent);
+      // 替换前确认并备份（使用Modal，兼容移动端）
+      return new Promise<void>((resolve) => {
+        new ConfirmModal(
+          this.app,
+          '⚠️ 确定要替换原文吗？此操作不可恢复，建议先手动备份。',
+          async () => {
+            // 确认后执行替换和备份
+            const backupPath = `${dir}/${baseName}_backup_${Date.now()}.${ext}`;
+            await this.app.vault.create(backupPath, await this.app.vault.read(originalFile));
+            await this.app.vault.modify(originalFile, processedContent);
+            new Notice('✅ 原文已替换，备份已创建');
+            resolve();
+          },
+          () => {
+            new Notice('已取消替换');
+            resolve();
+          }
+        ).open();
+      });
       new Notice(`✅ 已替换并备份到 ${baseName}_backup_*.md`);
     } else if (settings.outputMode === 'newFile') {
       const newPath = `${dir}/${baseName}${suffix}.${ext}`;
@@ -515,7 +574,14 @@ class CognitiveSettingTab extends PluginSettingTab {
         .onChange(async (value) => {
           this.plugin.settings.apiKey = value;
           await this.plugin.saveSettings();
-        }));
+        }))
+      .then(setting => {
+        // 直接操作DOM元素设置为密码类型
+        const inputEl = setting.controlEl.querySelector('input');
+        if (inputEl) {
+          inputEl.type = 'password';
+        }
+      });
 
     // 模型选择
     new Setting(containerEl)
@@ -968,16 +1034,25 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
     processedContent = filterReasonerOutput(processedContent);
 
     if (this.settings.outputMode === 'replace') {
-      // 替换前确认并备份
-      const confirmed = confirm('⚠️ 确定要替换原文吗？此操作不可恢复，建议先手动备份。');
-      if (!confirmed) {
-        new Notice('已取消替换');
-        return;
-      }
-      // 先创建备份
-      const backupPath = `${dir}/${baseName}_backup_${Date.now()}.${ext}`;
-      await this.app.vault.create(backupPath, await this.app.vault.read(originalFile));
-      await this.app.vault.modify(originalFile, processedContent);
+      // 替换前确认并备份（使用Modal，兼容移动端）
+      return new Promise<void>((resolve) => {
+        new ConfirmModal(
+          this.app,
+          '⚠️ 确定要替换原文吗？此操作不可恢复，建议先手动备份。',
+          async () => {
+            // 确认后执行替换和备份
+            const backupPath = `${dir}/${baseName}_backup_${Date.now()}.${ext}`;
+            await this.app.vault.create(backupPath, await this.app.vault.read(originalFile));
+            await this.app.vault.modify(originalFile, processedContent);
+            new Notice('✅ 原文已替换，备份已创建');
+            resolve();
+          },
+          () => {
+            new Notice('已取消替换');
+            resolve();
+          }
+        ).open();
+      });
       new Notice(`✅ 已替换并备份到 ${baseName}_backup_*.md`);
     } else if (this.settings.outputMode === 'newFile') {
       const newPath = `${dir}/${baseName}${suffix}.${ext}`;
