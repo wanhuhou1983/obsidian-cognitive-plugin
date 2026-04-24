@@ -432,7 +432,6 @@ class CognitiveSettingTab extends PluginSettingTab {
       .addText(text => text
         .setPlaceholder('sk-xxx')
         .setValue(this.plugin.settings.apiKey)
-        .setInputType('password')
         .onChange(async (value) => {
           this.plugin.settings.apiKey = value;
           await this.plugin.saveSettings();
