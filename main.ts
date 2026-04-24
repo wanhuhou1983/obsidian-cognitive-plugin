@@ -148,6 +148,17 @@ function convertLineRefsToWikiLinks(content: string, originalFileName: string): 
   return content.replace(/\(原文#L(\d+)\)/g, `[[${originalFileName}#$1|原文]]`);
 }
 
+// ==================== 过滤 DeepSeek Reasoner 输出 ====================
+function filterReasonerOutput(content: string): string {
+  // 移除 <thinking>...</thinking> 标签及其内容
+  let filtered = content.replace(/<thinking>[\s\S]*?<\/thinking>/g, '');
+  // 保留 <output> 标签内的内容，移除标签
+  filtered = filtered.replace(/<output>/g, '').replace(/<\/output>/g, '');
+  // 清理多余空行
+  filtered = filtered.replace(/\n{3,}/g, '\n\n').trim();
+  return filtered;
+}
+
 // ==================== 按章节拆分 ====================
 interface ChapterChunk {
   title: string;      // 章节标题
@@ -421,8 +432,9 @@ class ProcessModal extends Modal {
     const baseName = originalFile.basename;
     const dir = originalFile.parent?.path || '';
 
-    // 转换行号引用为 wiki 链接
-    const processedContent = convertLineRefsToWikiLinks(content, originalFile.name);
+    // 转换行号引用为 wiki 链接，并过滤 reasoner 输出
+    let processedContent = convertLineRefsToWikiLinks(content, originalFile.name);
+    processedContent = filterReasonerOutput(processedContent);
 
     if (settings.outputMode === 'replace') {
       // 替换前确认并备份
@@ -445,10 +457,17 @@ class ProcessModal extends Modal {
       }
     } else {
       // sidebar模式 - 在侧边栏显示
-      const panel = this.app.workspace.getLeaf('right');
+      // 先打开右侧边栏（如果未打开）
+      this.app.workspace.getRightLeaf(false);
+      // 等待一下确保侧边栏打开
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const panel = this.app.workspace.getRightLeaf(false);
       const newFile = await this.app.vault.create(`${baseName}${suffix}.${ext}`, processedContent);
       if (newFile instanceof TFile) {
         await panel.openFile(newFile);
+        // 激活并聚焦到侧边栏
+        this.app.workspace.setActiveLeaf(panel, true);
       }
     }
   }
@@ -944,8 +963,9 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
     const baseName = originalFile.basename;
     const dir = originalFile.parent?.path || '';
 
-    // 转换行号引用为 wiki 链接
-    const processedContent = convertLineRefsToWikiLinks(content, originalFile.name);
+    // 转换行号引用为 wiki 链接，并过滤 reasoner 输出
+    let processedContent = convertLineRefsToWikiLinks(content, originalFile.name);
+    processedContent = filterReasonerOutput(processedContent);
 
     if (this.settings.outputMode === 'replace') {
       // 替换前确认并备份
@@ -967,10 +987,18 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
         await this.app.workspace.getLeaf().openFile(newFile);
       }
     } else {
-      const panel = this.app.workspace.getLeaf('right');
+      // sidebar模式 - 在侧边栏显示
+      // 先打开右侧边栏（如果未打开）
+      this.app.workspace.getRightLeaf(false);
+      // 等待一下确保侧边栏打开
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const panel = this.app.workspace.getRightLeaf(false);
       const newFile = await this.app.vault.create(`${baseName}${suffix}.${ext}`, processedContent);
       if (newFile instanceof TFile) {
         await panel.openFile(newFile);
+        // 激活并聚焦到侧边栏
+        this.app.workspace.setActiveLeaf(panel, true);
       }
     }
   }
