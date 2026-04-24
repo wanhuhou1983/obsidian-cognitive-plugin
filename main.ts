@@ -11,7 +11,9 @@ interface CognitivePluginSettings {
   promptDenoise: string;
   removeToc: boolean;      // 删除目录
   removeComments: boolean; // 删除注释
-  removeIndex: boolean;    // 删除索引
+  removeIndex: boolean;
+  maxTokens: number;
+  temperature: number;
 }
 
 const DEFAULT_PROMPT_CLEAN = `你是一个专业的Markdown格式修复助手。请修复以下文本的格式问题：
@@ -114,6 +116,8 @@ const DEFAULT_SETTINGS: CognitivePluginSettings = {
   removeToc: true,
   removeComments: true,
   removeIndex: true,
+  maxTokens: 32000,
+  temperature: 0.3,
 };
 
 // ==================== 辅助函数：动态构建 Prompt ====================
@@ -143,7 +147,9 @@ async function callDeepSeek(
   model: string,
   systemPrompt: string,
   userContent: string,
-  onChunk?: (chunk: string) => void
+  onChunk?: (chunk: string) => void,
+  maxTokens: number = 32000,
+  temperature: number = 0.3
 ): Promise<string> {
   const response = await fetch(`${apiBaseUrl}/chat/completions`, {
     method: 'POST',
@@ -158,8 +164,8 @@ async function callDeepSeek(
         { role: 'user', content: userContent },
       ],
       stream: !!onChunk,
-      temperature: 0.3,
-      max_tokens: 32000,
+      temperature: temperature,
+      max_tokens: maxTokens,
     }),
   });
 
@@ -283,7 +289,10 @@ class ProcessModal extends Modal {
           settings.apiKey,
           settings.modelClean,
           dynamicPrompt,
-          content
+          content,
+          undefined,
+          settings.maxTokens,
+          settings.temperature
         );
 
         await this.saveOutput(cleaned, file, '_clean');
@@ -297,7 +306,10 @@ class ProcessModal extends Modal {
             settings.apiKey,
             settings.modelDenoise,
             settings.promptDenoise,
-            cleaned
+            cleaned,
+            undefined,
+            settings.maxTokens,
+            settings.temperature
           );
 
           await this.saveOutput(denoised, file, '_analysis');
@@ -310,7 +322,10 @@ class ProcessModal extends Modal {
           settings.apiKey,
           settings.modelDenoise,
           settings.promptDenoise,
-          content
+          content,
+          undefined,
+          settings.maxTokens,
+          settings.temperature
         );
 
         await this.saveOutput(denoised, file, '_analysis');
@@ -340,7 +355,17 @@ class ProcessModal extends Modal {
     const dir = originalFile.parent?.path || '';
 
     if (settings.outputMode === 'replace') {
+      // 替换前确认并备份
+      const confirmed = confirm('⚠️ 确定要替换原文吗？此操作不可恢复，建议先手动备份。');
+      if (!confirmed) {
+        new Notice('已取消替换');
+        return;
+      }
+      // 先创建备份
+      const backupPath = `${dir}/${baseName}_backup_${Date.now()}.${ext}`;
+      await this.app.vault.create(backupPath, await this.app.vault.read(originalFile));
       await this.app.vault.modify(originalFile, content);
+      new Notice(`✅ 已替换并备份到 ${baseName}_backup_*.md`);
     } else if (settings.outputMode === 'newFile') {
       const newPath = `${dir}/${baseName}${suffix}.${ext}`;
       await this.app.vault.create(newPath, content);
@@ -374,6 +399,12 @@ class CognitiveSettingTab extends PluginSettingTab {
 
     containerEl.createEl('h2', { text: 'Cognitive Noise Reducer 设置' });
 
+    // 隐私声明
+    containerEl.createEl('div', {
+      cls: 'setting-item-description',
+      html: '<span style="color: #e67e22;">⚠️ 隐私提示：</span> 您的笔记内容将被发送到 DeepSeek API 进行处理，请确保您信任该服务。API Key 仅本地存储，不会发送给任何第三方。'
+    });
+
     // API 配置
     new Setting(containerEl)
       .setName('API Base URL')
@@ -388,10 +419,11 @@ class CognitiveSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('API Key')
-      .setDesc('DeepSeek API Key')
+      .setDesc('DeepSeek API Key（仅本地存储，不会发送到任何第三方服务器）')
       .addText(text => text
         .setPlaceholder('sk-xxx')
         .setValue(this.plugin.settings.apiKey)
+        .setInputType('password')
         .onChange(async (value) => {
           this.plugin.settings.apiKey = value;
           await this.plugin.saveSettings();
@@ -464,6 +496,31 @@ class CognitiveSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.removeIndex)
         .onChange(async (value) => {
           this.plugin.settings.removeIndex = value;
+          await this.plugin.saveSettings();
+        }));
+
+    // API 参数
+    containerEl.createEl('h3', { text: 'API 参数' });
+
+    new Setting(containerEl)
+      .setName('Max Tokens')
+      .setDesc('API 响应的最大 token 数')
+      .addText(text => text
+        .setPlaceholder('32000')
+        .setValue(String(this.plugin.settings.maxTokens))
+        .onChange(async (value) => {
+          this.plugin.settings.maxTokens = parseInt(value) || 32000;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Temperature')
+      .setDesc('生成随机性（0-1，越高越随机）')
+      .addText(text => text
+        .setPlaceholder('0.3')
+        .setValue(String(this.plugin.settings.temperature))
+        .onChange(async (value) => {
+          this.plugin.settings.temperature = parseFloat(value) || 0.3;
           await this.plugin.saveSettings();
         }));
 
@@ -615,7 +672,10 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
           this.settings.apiKey,
           this.settings.modelClean,
           dynamicPrompt,
-          content
+          content,
+          undefined,
+          this.settings.maxTokens,
+          this.settings.temperature
         );
 
         await this.saveOutput(cleaned, file, '_clean');
@@ -628,7 +688,10 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
             this.settings.apiKey,
             this.settings.modelDenoise,
             this.settings.promptDenoise,
-            cleaned
+            cleaned,
+            undefined,
+            this.settings.maxTokens,
+            this.settings.temperature
           );
 
           await this.saveOutput(denoised, file, '_analysis');
@@ -641,7 +704,10 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
           this.settings.apiKey,
           this.settings.modelDenoise,
           this.settings.promptDenoise,
-          content
+          content,
+          undefined,
+          this.settings.maxTokens,
+          this.settings.temperature
         );
 
         await this.saveOutput(denoised, file, '_analysis');
@@ -669,7 +735,17 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
     const dir = originalFile.parent?.path || '';
 
     if (this.settings.outputMode === 'replace') {
+      // 替换前确认并备份
+      const confirmed = confirm('⚠️ 确定要替换原文吗？此操作不可恢复，建议先手动备份。');
+      if (!confirmed) {
+        new Notice('已取消替换');
+        return;
+      }
+      // 先创建备份
+      const backupPath = `${dir}/${baseName}_backup_${Date.now()}.${ext}`;
+      await this.app.vault.create(backupPath, await this.app.vault.read(originalFile));
       await this.app.vault.modify(originalFile, content);
+      new Notice(`✅ 已替换并备份到 ${baseName}_backup_*.md`);
     } else if (this.settings.outputMode === 'newFile') {
       const newPath = `${dir}/${baseName}${suffix}.${ext}`;
       await this.app.vault.create(newPath, content);
