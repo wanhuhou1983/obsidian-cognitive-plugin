@@ -605,7 +605,6 @@ class ProcessModal extends Modal {
           }
         ).open();
       });
-      new Notice(`✅ 已替换并备份到 ${baseName}_backup_*.md`);
     } else if (settings.outputMode === 'newFile') {
       const newPath = `${dir}/${baseName}${suffix}.${ext}`;
       await this.app.vault.create(newPath, processedContent);
@@ -669,102 +668,104 @@ class CognitiveSettingTab extends PluginSettingTab {
           this.display();
         }));
 
-    // DeepSeek API 配置
-    new Setting(containerEl)
-      .setName('DeepSeek API Base URL')
-      .setDesc('DeepSeek API 地址')
-      .addText(text => text
-        .setPlaceholder('https://api.deepseek.com/v1')
-        .setValue(this.plugin.settings.apiBaseUrl)
-        .onChange(async (value) => {
-          this.plugin.settings.apiBaseUrl = value;
-          await this.plugin.saveSettings();
-        }));
+    // ==================== DeepSeek 配置（仅 provider=deepseek 时显示）====================
+    if (this.plugin.settings.provider === 'deepseek') {
+      containerEl.createEl('h3', { text: 'DeepSeek 配置' });
 
-    new Setting(containerEl)
-      .setName('DeepSeek API Key')
-      .setDesc('DeepSeek API Key（仅本地存储）')
-      .addText(text => text
-        .setPlaceholder('sk-xxx')
-        .setValue(this.plugin.settings.apiKey)
-        .onChange(async (value) => {
-          this.plugin.settings.apiKey = value;
-          await this.plugin.saveSettings();
-        }))
-      .then(setting => {
-        const inputEl = setting.controlEl.querySelector('input');
-        if (inputEl) {
-          inputEl.type = 'password';
-        }
-      });
+      new Setting(containerEl)
+        .setName('API Base URL')
+        .setDesc('DeepSeek API 地址')
+        .addText(text => text
+          .setPlaceholder('https://api.deepseek.com/v1')
+          .setValue(this.plugin.settings.apiBaseUrl)
+          .onChange(async (value) => {
+            this.plugin.settings.apiBaseUrl = value;
+            await this.plugin.saveSettings();
+          }));
 
-    // Gemini API 配置
-    new Setting(containerEl)
-      .setName('Gemini API Key')
-      .setDesc('Google Gemini API Key（仅本地存储）')
-      .addText(text => text
-        .setPlaceholder('AIza...')
-        .setValue(this.plugin.settings.geminiApiKey)
-        .onChange(async (value) => {
-          this.plugin.settings.geminiApiKey = value;
-          await this.plugin.saveSettings();
-        }))
-      .then(setting => {
-        const inputEl = setting.controlEl.querySelector('input');
-        if (inputEl) {
-          inputEl.type = 'password';
-        }
-      });
+      new Setting(containerEl)
+        .setName('API Key')
+        .setDesc('DeepSeek API Key（仅本地存储）')
+        .addText(text => text
+          .setPlaceholder('sk-xxx')
+          .setValue(this.plugin.settings.apiKey)
+          .onChange(async (value) => {
+            this.plugin.settings.apiKey = value;
+            await this.plugin.saveSettings();
+          }))
+        .then(setting => {
+          const inputEl = setting.controlEl.querySelector('input');
+          if (inputEl) {
+            inputEl.type = 'password';
+          }
+        });
 
-    // ==================== DeepSeek 模型 ====================
-    containerEl.createEl('h3', { text: 'DeepSeek 模型' });
+      new Setting(containerEl)
+        .setName('精度修复模型')
+        .setDesc('deepseek-chat')
+        .addText(text => text
+          .setPlaceholder('deepseek-chat')
+          .setValue(this.plugin.settings.deepseekModelClean)
+          .onChange(async (value) => {
+            this.plugin.settings.deepseekModelClean = value;
+            await this.plugin.saveSettings();
+          }));
 
-    new Setting(containerEl)
-      .setName('精度修复模型')
-      .setDesc('deepseek-chat')
-      .addText(text => text
-        .setPlaceholder('deepseek-chat')
-        .setValue(this.plugin.settings.deepseekModelClean)
-        .onChange(async (value) => {
-          this.plugin.settings.deepseekModelClean = value;
-          await this.plugin.saveSettings();
-        }));
+      new Setting(containerEl)
+        .setName('认知降噪模型')
+        .setDesc('deepseek-reasoner')
+        .addText(text => text
+          .setPlaceholder('deepseek-reasoner')
+          .setValue(this.plugin.settings.deepseekModelDenoise)
+          .onChange(async (value) => {
+            this.plugin.settings.deepseekModelDenoise = value;
+            await this.plugin.saveSettings();
+          }));
+    }
 
-    new Setting(containerEl)
-      .setName('认知降噪模型')
-      .setDesc('deepseek-reasoner')
-      .addText(text => text
-        .setPlaceholder('deepseek-reasoner')
-        .setValue(this.plugin.settings.deepseekModelDenoise)
-        .onChange(async (value) => {
-          this.plugin.settings.deepseekModelDenoise = value;
-          await this.plugin.saveSettings();
-        }));
+    // ==================== Gemini 配置（仅 provider=gemini 时显示）====================
+    if (this.plugin.settings.provider === 'gemini') {
+      containerEl.createEl('h3', { text: 'Gemini 配置' });
 
-    // ==================== Gemini 模型 ====================
-    containerEl.createEl('h3', { text: 'Gemini 模型' });
+      new Setting(containerEl)
+        .setName('API Key')
+        .setDesc('Google Gemini API Key（仅本地存储）')
+        .addText(text => text
+          .setPlaceholder('AIza...')
+          .setValue(this.plugin.settings.geminiApiKey)
+          .onChange(async (value) => {
+            this.plugin.settings.geminiApiKey = value;
+            await this.plugin.saveSettings();
+          }))
+        .then(setting => {
+          const inputEl = setting.controlEl.querySelector('input');
+          if (inputEl) {
+            inputEl.type = 'password';
+          }
+        });
 
-    new Setting(containerEl)
-      .setName('精度修复模型')
-      .setDesc('gemini-2.0-flash')
-      .addText(text => text
-        .setPlaceholder('gemini-2.0-flash')
-        .setValue(this.plugin.settings.geminiModelClean)
-        .onChange(async (value) => {
-          this.plugin.settings.geminiModelClean = value;
-          await this.plugin.saveSettings();
-        }));
+      new Setting(containerEl)
+        .setName('精度修复模型')
+        .setDesc('gemini-2.0-flash')
+        .addText(text => text
+          .setPlaceholder('gemini-2.0-flash')
+          .setValue(this.plugin.settings.geminiModelClean)
+          .onChange(async (value) => {
+            this.plugin.settings.geminiModelClean = value;
+            await this.plugin.saveSettings();
+          }));
 
-    new Setting(containerEl)
-      .setName('认知降噪模型')
-      .setDesc('gemini-2.5-flash')
-      .addText(text => text
-        .setPlaceholder('gemini-2.5-flash')
-        .setValue(this.plugin.settings.geminiModelDenoise)
-        .onChange(async (value) => {
-          this.plugin.settings.geminiModelDenoise = value;
-          await this.plugin.saveSettings();
-        }));
+      new Setting(containerEl)
+        .setName('认知降噪模型')
+        .setDesc('gemini-2.5-flash')
+        .addText(text => text
+          .setPlaceholder('gemini-2.5-flash')
+          .setValue(this.plugin.settings.geminiModelDenoise)
+          .onChange(async (value) => {
+            this.plugin.settings.geminiModelDenoise = value;
+            await this.plugin.saveSettings();
+          }));
+    }
 
     // 输出模式
     new Setting(containerEl)
@@ -1156,11 +1157,15 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
 
   // 从合并结果中提取指定章节的内容
   async extractChapterFromResult(fullContent: string, chapterTitle: string): Promise<string> {
-    // 简单实现：查找章节标题到下一个章节标题之间的内容
-    // 实际使用时，AI 输出的章节标题应该与输入一致
     const lines = fullContent.split('\n');
     let inTargetChapter = false;
     const chapterLines: string[] = [];
+
+    // 提取标题核心词（去掉括号、编号等干扰词）
+    const coreTitle = chapterTitle
+      .replace(/[（(].*[）)]/g, '')  // 去除括号内容
+      .replace(/^\d+[\.\、\s]+/, '')  // 去除开头编号
+      .trim();
 
     for (const line of lines) {
       // 检测章节标题（## 标题）
@@ -1170,7 +1175,14 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
           // 遇到下一个章节，停止
           break;
         }
-        if (match[1].trim() === chapterTitle) {
+        const extractedTitle = match[1].trim();
+        // 精确匹配 或 模糊匹配（互相包含）
+        const isMatch =
+          extractedTitle === chapterTitle ||
+          extractedTitle === coreTitle ||
+          extractedTitle.includes(coreTitle) ||
+          coreTitle.includes(extractedTitle);
+        if (isMatch) {
           inTargetChapter = true;
           chapterLines.push(line);
         }
@@ -1221,7 +1233,6 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
           }
         ).open();
       });
-      new Notice(`✅ 已替换并备份到 ${baseName}_backup_*.md`);
     } else if (this.settings.outputMode === 'newFile') {
       const newPath = `${dir}/${baseName}${suffix}.${ext}`;
       await this.app.vault.create(newPath, processedContent);
