@@ -357,11 +357,9 @@ async function callGemini(
 
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data:')) continue;
-
-        const jsonStr = trimmed.slice(5).trim();
-        if (!jsonStr || jsonStr === '[DONE]') continue;
-
+        // Gemini streamGenerateContent 返回 JSON 对象换行分隔，跳过 [ ] , 分隔符
+        if (!trimmed || trimmed === '[' || trimmed === ']' || trimmed === ',') continue;
+        const jsonStr = trimmed.replace(/,$/, '');
         try {
           const json = JSON.parse(jsonStr);
           const content = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -652,7 +650,10 @@ class ProcessModal extends Modal {
 
     // 转换行号引用为 wiki 链接，并过滤 reasoner 输出
     let processedContent = convertLineRefsToWikiLinks(content, originalFile.name);
-    processedContent = filterReasonerOutput(processedContent);
+    // 仅在 DeepSeek reasoner 模型时才需要过滤 <thinking>/<output> 标签
+    if (settings.provider === 'deepseek') {
+      processedContent = filterReasonerOutput(processedContent);
+    }
 
     if (settings.outputMode === 'replace') {
       // 替换前确认并备份（使用Modal，兼容移动端）
@@ -683,13 +684,14 @@ class ProcessModal extends Modal {
       }
     } else {
       // sidebar模式 - 在侧边栏显示
-      // 先打开右侧边栏（如果未打开）
-      this.app.workspace.getRightLeaf(false);
       // 等待一下确保侧边栏打开
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       const panel = this.app.workspace.getRightLeaf(false);
-      const newFile = await this.app.vault.create(`${baseName}${suffix}.${ext}`, processedContent);
+      const newFile = await this.app.vault.create(
+        dir ? `${dir}/${baseName}${suffix}.${ext}` : `${baseName}${suffix}.${ext}`,
+        processedContent
+      );
       if (newFile instanceof TFile) {
         await panel.openFile(newFile);
         // 激活并聚焦到侧边栏
@@ -1280,7 +1282,10 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
 
     // 转换行号引用为 wiki 链接，并过滤 reasoner 输出
     let processedContent = convertLineRefsToWikiLinks(content, originalFile.name);
-    processedContent = filterReasonerOutput(processedContent);
+    // 仅在 DeepSeek reasoner 模型时才需要过滤 <thinking>/<output> 标签
+    if (this.settings.provider === 'deepseek') {
+      processedContent = filterReasonerOutput(processedContent);
+    }
 
     if (this.settings.outputMode === 'replace') {
       // 替换前确认并备份（使用Modal，兼容移动端）
@@ -1311,13 +1316,14 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
       }
     } else {
       // sidebar模式 - 在侧边栏显示
-      // 先打开右侧边栏（如果未打开）
-      this.app.workspace.getRightLeaf(false);
       // 等待一下确保侧边栏打开
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       const panel = this.app.workspace.getRightLeaf(false);
-      const newFile = await this.app.vault.create(`${baseName}${suffix}.${ext}`, processedContent);
+      const newFile = await this.app.vault.create(
+        dir ? `${dir}/${baseName}${suffix}.${ext}` : `${baseName}${suffix}.${ext}`,
+        processedContent
+      );
       if (newFile instanceof TFile) {
         await panel.openFile(newFile);
         // 激活并聚焦到侧边栏
