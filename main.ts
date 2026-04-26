@@ -958,7 +958,8 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
       return;
     }
 
-    const useChunking = this.settings.splitByChapter;
+    // Gemini 1M上下文，不需要分段处理；除非用户明确开启
+    const useChunking = this.settings.provider === 'gemini' ? false : this.settings.splitByChapter;
     const chunks = useChunking ? splitByH1(content) : null;
 
     try {
