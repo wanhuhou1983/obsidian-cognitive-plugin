@@ -650,10 +650,8 @@ class ProcessModal extends Modal {
 
     // 转换行号引用为 wiki 链接，并过滤 reasoner 输出
     let processedContent = convertLineRefsToWikiLinks(content, originalFile.name);
-    // 仅在 DeepSeek reasoner 模型时才需要过滤 <thinking>/<output> 标签
-    if (settings.provider === 'deepseek') {
-      processedContent = filterReasonerOutput(processedContent);
-    }
+    // 过滤 <thinking>/<output> 标签（所有模型统一处理）
+    processedContent = filterReasonerOutput(processedContent);
 
     if (settings.outputMode === 'replace') {
       // 替换前确认并备份（使用Modal，兼容移动端）
@@ -1024,7 +1022,7 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
-  triggerProcess(mode?: 'clean' | 'denoise' | 'full') {
+  async triggerProcess(mode?: 'clean' | 'denoise' | 'full') {
     const activeLeaf = this.app.workspace.getActiveViewOfType(MarkdownView);
 
     if (!activeLeaf) {
@@ -1043,7 +1041,7 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
 
     if (mode) {
       // 直接执行指定模式
-      this.executeMode(mode, content, file);
+      await this.executeMode(mode, content, file);
     } else {
       // 弹出模式选择
       new ProcessModal(this.app, this, content, file).open();
@@ -1282,10 +1280,8 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
 
     // 转换行号引用为 wiki 链接，并过滤 reasoner 输出
     let processedContent = convertLineRefsToWikiLinks(content, originalFile.name);
-    // 仅在 DeepSeek reasoner 模型时才需要过滤 <thinking>/<output> 标签
-    if (this.settings.provider === 'deepseek') {
-      processedContent = filterReasonerOutput(processedContent);
-    }
+    // 过滤 <thinking>/<output> 标签（所有模型统一处理）
+    processedContent = filterReasonerOutput(processedContent);
 
     if (this.settings.outputMode === 'replace') {
       // 替换前确认并备份（使用Modal，兼容移动端）
