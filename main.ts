@@ -6,8 +6,12 @@ interface CognitivePluginSettings {
   apiBaseUrl: string;       // DeepSeek API地址
   apiKey: string;           // DeepSeek API Key
   geminiApiKey: string;     // Gemini API Key
-  modelClean: string;
-  modelDenoise: string;
+  // DeepSeek 模型
+  deepseekModelClean: string;
+  deepseekModelDenoise: string;
+  // Gemini 模型
+  geminiModelClean: string;
+  geminiModelDenoise: string;
   outputMode: 'newFile' | 'replace' | 'sidebar';
   promptClean: string;
   promptDenoise: string;
@@ -113,8 +117,10 @@ const DEFAULT_SETTINGS: CognitivePluginSettings = {
   apiBaseUrl: 'https://api.deepseek.com/v1',
   apiKey: '',
   geminiApiKey: '',
-  modelClean: 'deepseek-chat',
-  modelDenoise: 'deepseek-reasoner',
+  deepseekModelClean: 'deepseek-chat',
+  deepseekModelDenoise: 'deepseek-reasoner',
+  geminiModelClean: 'gemini-2.0-flash',
+  geminiModelDenoise: 'gemini-2.5-flash',
   outputMode: 'newFile',
   promptClean: DEFAULT_PROMPT_CLEAN,
   promptDenoise: DEFAULT_PROMPT_DENOISE,
@@ -342,6 +348,14 @@ interface AIConfig {
   geminiApiKey: string;
 }
 
+// 根据 provider 返回当前模型名
+function getModel(settings: CognitivePluginSettings, type: 'clean' | 'denoise'): string {
+  if (settings.provider === 'gemini') {
+    return type === 'clean' ? settings.geminiModelClean : settings.geminiModelDenoise;
+  }
+  return type === 'clean' ? settings.deepseekModelClean : settings.deepseekModelDenoise;
+}
+
 async function callAI(
   config: AIConfig,
   model: string,
@@ -502,7 +516,7 @@ class ProcessModal extends Modal {
         );
         const cleaned = await callAI(
           aiConfig,
-          settings.modelClean,
+          getModel(settings, 'clean'),
           dynamicPrompt,
           content,
           undefined,
@@ -518,7 +532,7 @@ class ProcessModal extends Modal {
           new Notice('🧠 开始认知降噪...');
           const denoised = await callAI(
             aiConfig,
-            settings.modelDenoise,
+            getModel(settings, 'denoise'),
             settings.promptDenoise,
             cleaned,
             undefined,
@@ -533,7 +547,7 @@ class ProcessModal extends Modal {
         new Notice('🧠 开始认知降噪...');
         const denoised = await callAI(
           aiConfig,
-          settings.modelDenoise,
+          getModel(settings, 'denoise'),
           settings.promptDenoise,
           content,
           undefined,
@@ -702,26 +716,53 @@ class CognitiveSettingTab extends PluginSettingTab {
         }
       });
 
-    // 模型选择
+    // ==================== DeepSeek 模型 ====================
+    containerEl.createEl('h3', { text: 'DeepSeek 模型' });
+
     new Setting(containerEl)
       .setName('精度修复模型')
-      .setDesc('DeepSeek: deepseek-chat / Gemini: gemini-2.0-flash 等')
+      .setDesc('deepseek-chat')
       .addText(text => text
         .setPlaceholder('deepseek-chat')
-        .setValue(this.plugin.settings.modelClean)
+        .setValue(this.plugin.settings.deepseekModelClean)
         .onChange(async (value) => {
-          this.plugin.settings.modelClean = value;
+          this.plugin.settings.deepseekModelClean = value;
           await this.plugin.saveSettings();
         }));
 
     new Setting(containerEl)
       .setName('认知降噪模型')
-      .setDesc('DeepSeek: deepseek-reasoner / Gemini: gemini-2.5-pro 等')
+      .setDesc('deepseek-reasoner')
       .addText(text => text
         .setPlaceholder('deepseek-reasoner')
-        .setValue(this.plugin.settings.modelDenoise)
+        .setValue(this.plugin.settings.deepseekModelDenoise)
         .onChange(async (value) => {
-          this.plugin.settings.modelDenoise = value;
+          this.plugin.settings.deepseekModelDenoise = value;
+          await this.plugin.saveSettings();
+        }));
+
+    // ==================== Gemini 模型 ====================
+    containerEl.createEl('h3', { text: 'Gemini 模型' });
+
+    new Setting(containerEl)
+      .setName('精度修复模型')
+      .setDesc('gemini-2.0-flash')
+      .addText(text => text
+        .setPlaceholder('gemini-2.0-flash')
+        .setValue(this.plugin.settings.geminiModelClean)
+        .onChange(async (value) => {
+          this.plugin.settings.geminiModelClean = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('认知降噪模型')
+      .setDesc('gemini-2.5-flash')
+      .addText(text => text
+        .setPlaceholder('gemini-2.5-flash')
+        .setValue(this.plugin.settings.geminiModelDenoise)
+        .onChange(async (value) => {
+          this.plugin.settings.geminiModelDenoise = value;
           await this.plugin.saveSettings();
         }));
 
@@ -985,7 +1026,7 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
 
             const cleaned = await callAI(
               aiConfig,
-              this.settings.modelClean,
+              getModel(this.settings, 'clean'),
               dynamicPrompt,
               chunk.content,
               undefined,
@@ -1009,7 +1050,7 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
 
           cleanedContent = await callAI(
             aiConfig,
-            this.settings.modelClean,
+            getModel(this.settings, 'clean'),
             dynamicPrompt,
             content,
             undefined,
@@ -1037,7 +1078,7 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
 
               const denoised = await callAI(
                 aiConfig,
-                this.settings.modelDenoise,
+                getModel(this.settings, 'denoise'),
                 this.settings.promptDenoise,
                 cleanedChunk,
                 undefined,
@@ -1054,7 +1095,7 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
             new Notice('🧠 开始认知降噪...');
             const denoised = await callAI(
               aiConfig,
-              this.settings.modelDenoise,
+              getModel(this.settings, 'denoise'),
               this.settings.promptDenoise,
               cleanedContent,
               undefined,
@@ -1078,7 +1119,7 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
 
             const denoised = await callAI(
               aiConfig,
-              this.settings.modelDenoise,
+              getModel(this.settings, 'denoise'),
               this.settings.promptDenoise,
               chunk.content,
               undefined,
@@ -1095,7 +1136,7 @@ export default class CognitiveNoiseReducerPlugin extends Plugin {
           new Notice('🧠 开始认知降噪...');
           const denoised = await callAI(
             aiConfig,
-            this.settings.modelDenoise,
+            getModel(this.settings, 'denoise'),
             this.settings.promptDenoise,
             content,
             undefined,
