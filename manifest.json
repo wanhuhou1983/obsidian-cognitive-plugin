@@ -2,12 +2,9 @@
   "id": "cognitive-noise-reducer",
   "name": "Cognitive Noise Reducer",
   "version": "1.0.0",
-  "description": "AI-powered Markdown cleanup and cognitive denoising tool using DeepSeek",
+  "description": "AI-powered Markdown cleanup and cognitive denoising tool using DeepSeek or Gemini",
   "author": "UHUH",
   "authorUrl": "https://github.com/wanhuhou",
   "isDesktopOnly": true,
-  "minAppVersion": "1.0.0",
-  "fundingUrl": null,
-  "enable": true,
-  "permissions": []
+  "minAppVersion": "1.4.0"
 }
