@@ -1,7 +1,7 @@
 {
   "name": "obsidian-cognitive-noise-reducer",
   "version": "1.0.0",
-  "description": "AI-powered Markdown cleanup and cognitive denoising tool",
+  "description": "AI-powered Markdown cleanup and cognitive denoising tool using DeepSeek or Gemini",
   "main": "main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -12,7 +12,7 @@
     "obsidian": "^1.4.0",
     "typescript": "^5.3.0"
   },
-  "keywords": ["obsidian", "plugin", "markdown", "ai", "deepseek"],
+  "keywords": ["obsidian", "plugin", "markdown", "ai", "deepseek", "gemini", "cognitive"],
   "author": "UHUH",
   "license": "MIT"
 }
